@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   MapPin,
   Sun,
@@ -8,14 +8,13 @@ import {
   ChevronDown,
   Leaf,
   Heart,
-  Timer,
   Utensils,
-  FlaskConical,
   CloudSun,
   Scissors,
 } from "lucide-react";
 import Footer from './components/Footer';
 import products from "./data/data.js";
+
 interface Product {
   id: number;
   name: string;
@@ -29,19 +28,82 @@ interface Product {
   uses: string[];
 }
 
-
-
-
 function App() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [currentImage, setCurrentImage] = useState(1);
+
+  const [availability, setAvailability] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const [showForm, setShowForm] = useState(false);
+  const [formSubmitted, setFormSubmitted] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [contact, setContact] = useState("");
+  const [copySuccess, setCopySuccess] = useState("");
+
+  const API_BASE_URL = "https://brunobusiness777-thankfulharlequinboar.web.val.run";
 
   const closeModal = () => setSelectedProduct(null);
+  const toggleImage = () => setCurrentImage(currentImage === 1 ? 2 : 1);
 
-  const [currentImage, setCurrentImage] = useState(1); 
-
-  const toggleImage = () => {
-    setCurrentImage(currentImage === 1 ? 2 : 1);
+  const fetchAvailability = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/availability`);
+      const data = await response.json();
+      setAvailability(data.available);
+    } catch (error) {
+      console.error("Error fetching availability:", error);
+    }
   };
+
+  const canReserve = () => {
+    const reservations = JSON.parse(localStorage.getItem("reservations") || "[]");
+    const now = Date.now();
+    const last24h = reservations.filter((t: number) => now - t < 24 * 60 * 60 * 1000);
+    return last24h.length < 2;
+  };
+
+  const recordReservation = () => {
+    const reservations = JSON.parse(localStorage.getItem("reservations") || "[]");
+    reservations.push(Date.now());
+    localStorage.setItem("reservations", JSON.stringify(reservations));
+  };
+
+  const handleReservation = async () => {
+    if (!canReserve()) {
+      alert("Du hast bereits 2 Pflanzen innerhalb der letzten 24h reserviert.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/reserve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ firstName, lastName, contact }),
+      });
+
+      if (response.ok) {
+        recordReservation();
+        fetchAvailability();
+        setFormSubmitted(true);
+      } else {
+        alert("Reservierung fehlgeschlagen.");
+      }
+    } catch (error) {
+      console.error("Fehler bei der Reservierung:", error);
+      alert("Etwas ist schiefgelaufen.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAvailability();
+    const interval = setInterval(fetchAvailability, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="min-h-screen bg-white">
@@ -290,25 +352,105 @@ function App() {
         </div>
       </section>
 
-      {/* Contact Section */}
-<section className="py-16 bg-white text-center" id="contact">
-  <div className="max-w-2xl mx-auto px-4">
-    <h2 className="text-3xl font-bold mb-4 text-gray-900">Interested in a Plant?</h2>
-    <p className="text-gray-600 mb-6">
-      Feel free to contact me via email if you'd like to get your own Calabrian chili plant.
-    </p>
-    <button
-      onClick={() => {
-        navigator.clipboard.writeText("rossocalabria25@gmail.com");
-        alert("Email copied to clipboard!");
-      }}
-      className="inline-block bg-red-600 text-white px-6 py-3 rounded-full hover:bg-red-700 transition-colors"
-    >
-      Copy Email
-    </button>
-  </div>
-</section>
+{/* Reservieren Section */}
+<section className="py-16 text-center" id="contact">
+        <div className="max-w-2xl mx-auto px-4">
+          <h2 className="text-4xl font-bold text-center mb-16 text-gray-900 relative">
+            <span>Interested In A Plant?</span>
+            <div className="absolute w-24 h-1 bg-gradient-to-r from-red-500 to-red-200 bottom-0 top-8 left-1/2 transform -translate-x-1/2 mt-2 rounded-full"></div>
+          </h2>
 
+          <div className="bg-white rounded-xl p-8 shadow-lg max-w-lg mx-auto mb-8">
+            <div className="mb-6">
+              <p className="text-gray-800 text-xl mb-2">Currently Available Plants:</p>
+              <p className="font-semibold text-3xl text-red-600">
+                {availability !== null ? availability : "Loading..."}
+              </p>
+            </div>
+
+            {!showForm && !formSubmitted && (
+              <button
+                onClick={() => setShowForm(true)}
+                disabled={availability === 0}
+                className={`w-full px-6 py-3 text-white font-semibold rounded-full transition-all transform ${
+                  availability === 0
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-red-600 hover:bg-red-700 hover:scale-105"
+                }`}
+              >
+                Jetzt reservieren
+              </button>
+            )}
+
+            {showForm && !formSubmitted && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleReservation();
+                }}
+                className="space-y-4 text-left"
+              >
+                <input
+                  type="text"
+                  required
+                  placeholder="Vorname"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="w-full p-3 border rounded"
+                />
+                <input
+                  type="text"
+                  required
+                  placeholder="Nachname"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="w-full p-3 border rounded"
+                />
+                <input
+                  type="text"
+                  required
+                  placeholder="Telefonnummer oder E-Mail"
+                  value={contact}
+                  onChange={(e) => setContact(e.target.value)}
+                  className="w-full p-3 border rounded"
+                />
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className={`w-full px-6 py-3 text-white font-semibold rounded-full transition-all transform ${
+                    loading
+                      ? "bg-gray-400 cursor-not-allowed"
+                      : "bg-red-600 hover:bg-red-700 hover:scale-105"
+                  }`}
+                >
+                  {loading ? "Reserviere..." : "Reservieren"}
+                </button>
+              </form>
+            )}
+
+            {formSubmitted && (
+              <div className="text-center space-y-4">
+                <p className="text-xl font-semibold text-green-700">Danke! 🌶️</p>
+                <p className="text-gray-700">Vereinbare den Abholort per WhatsApp:</p>
+                <div className="flex items-center justify-center gap-2">
+                  <span className="font-mono text-lg text-red-600">+49 123 456789</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText("+49123456789");
+                      setCopySuccess("Kopiert!");
+                      setTimeout(() => setCopySuccess(""), 2000);
+                    }}
+                    className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                  >
+                    Kopieren
+                  </button>
+                </div>
+                {copySuccess && <p className="text-sm text-green-600">{copySuccess}</p>}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* Footer */}
       <Footer />
@@ -335,33 +477,25 @@ function App() {
             <div className="space-y-8">
               <div>
                 <h4 className="text-lg font-semibold mb-4">Plant Care</h4>
-                <div className="grid gap-4">
-                  <div className="flex items-start gap-3">
-                    <Droplets className="text-red-600 mt-1" size={20} />
-                    <p className="text-gray-600">
-                      {selectedProduct.care.water}
-                    </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-gray-700">
+                  <div className="flex items-center gap-2">
+                    <Droplets className="text-red-500" /> {selectedProduct.care.water}
                   </div>
-                  <div className="flex items-start gap-3">
-                    <Sun className="text-red-600 mt-1" size={20} />
-                    <p className="text-gray-600">{selectedProduct.care.sun}</p>
+                  <div className="flex items-center gap-2">
+                    <Sun className="text-yellow-500" /> {selectedProduct.care.sun}
                   </div>
-                  <div className="flex items-start gap-3">
-                    <Sprout className="text-red-600 mt-1" size={20} />
-                    <p className="text-gray-600">{selectedProduct.care.soil}</p>
+                  <div className="flex items-center gap-2">
+                    <Sprout className="text-green-500" /> {selectedProduct.care.soil}
                   </div>
                 </div>
               </div>
               <div>
-                <h4 className="text-lg font-semibold mb-4">Culinary Uses</h4>
-                <div className="grid gap-2">
-                  {selectedProduct.uses.map((use, index) => (
-                    <div key={index} className="flex items-center gap-3">
-                      <Utensils className="text-red-600" size={16} />
-                      <p className="text-gray-600">{use}</p>
-                    </div>
+                <h4 className="text-lg font-semibold mb-4">Uses</h4>
+                <ul className="list-disc list-inside text-gray-700">
+                  {selectedProduct.uses.map((use, i) => (
+                    <li key={i}>{use}</li>
                   ))}
-                </div>
+                </ul>
               </div>
             </div>
           </div>
